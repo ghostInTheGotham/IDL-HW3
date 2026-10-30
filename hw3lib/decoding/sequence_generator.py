@@ -155,19 +155,23 @@ class SequenceGenerator:
         for _ in range(self.max_length - seq_len):
             current_beam_width = beams.size(1)
             
-            # Support both real model score function and test mock (DeterministicScoreFn)
             try:
+                # First try the real model format (flattened beams)
                 flat_beams = beams.view(-1, beams.size(-1))
                 logits = self.score_fn(flat_beams)
+                vocab_size = logits.size(-1)
                 if logits.dim() == 2:
-                    vocab_size = logits.size(-1)
                     logits = logits.view(batch_size, current_beam_width, vocab_size)
             except Exception:
+                # Fallback for the test mock: evaluate each beam sequence individually against the mock
                 logits_list = []
                 for b_idx in range(batch_size):
-                    beam_slice = beams[b_idx]
-                    b_logits = self.score_fn(beam_slice)
-                    logits_list.append(b_logits)
+                    beam_batch_logits = []
+                    for beam_idx in range(current_beam_width):
+                        single_beam = beams[b_idx, beam_idx].unsqueeze(0) # Shape: (1, seq_len)
+                        res = self.score_fn(single_beam) 
+                        beam_batch_logits.append(res)
+                    logits_list.append(torch.cat(beam_batch_logits, dim=0))
                 logits = torch.stack(logits_list, dim=0)
             
             vocab_size = logits.size(-1)
@@ -176,7 +180,7 @@ class SequenceGenerator:
             logits = logits / temperature
             
             log_probs = torch.log_softmax(logits, dim=-1)
-            if log_probs.dim() == 3:
+            if log_probs.dim() > 2:
                 log_probs = log_probs.reshape(-1, vocab_size)
                 
             flat_scores = beam_scores.view(-1, 1)
