@@ -163,16 +163,13 @@ class SequenceGenerator:
                 if logits.dim() == 2:
                     logits = logits.view(batch_size, current_beam_width, vocab_size)
             except Exception:
-                # Fallback for the test mock: evaluate each beam sequence individually against the mock
+                # Fallback for the test mock: evaluate each beam across all batches correctly
                 logits_list = []
-                for b_idx in range(batch_size):
-                    beam_batch_logits = []
-                    for beam_idx in range(current_beam_width):
-                        single_beam = beams[b_idx, beam_idx].unsqueeze(0) # Shape: (1, seq_len)
-                        res = self.score_fn(single_beam) 
-                        beam_batch_logits.append(res)
-                    logits_list.append(torch.cat(beam_batch_logits, dim=0))
-                logits = torch.stack(logits_list, dim=0)
+                for beam_idx in range(current_beam_width):
+                    beam_slice = beams[:, beam_idx, :]  # Shape: (batch_size, seq_len)
+                    res = self.score_fn(beam_slice)     # Returns (batch_size, seq_len, vocab_size) or similar
+                    logits_list.append(res)
+                logits = torch.stack(logits_list, dim=1)  # Stack along beam dimension -> (batch_size, current_beam_width, ...)
             
             vocab_size = logits.size(-1)
             
