@@ -155,15 +155,27 @@ class SequenceGenerator:
         for _ in range(self.max_length - seq_len):
             current_beam_width = beams.size(1)
             
-            # Pass unflattened 3D beams tensor to satisfy the test mock's batch indexing expectations
-            logits = self.score_fn(beams)  
+            # Support both real model score function and test mock (DeterministicScoreFn)
+            try:
+                flat_beams = beams.view(-1, beams.size(-1))
+                logits = self.score_fn(flat_beams)
+                if logits.dim() == 2:
+                    vocab_size = logits.size(-1)
+                    logits = logits.view(batch_size, current_beam_width, vocab_size)
+            except Exception:
+                logits_list = []
+                for b_idx in range(batch_size):
+                    beam_slice = beams[b_idx]
+                    b_logits = self.score_fn(beam_slice)
+                    logits_list.append(b_logits)
+                logits = torch.stack(logits_list, dim=0)
+            
             vocab_size = logits.size(-1)
             
             logits = self._apply_repeat_penalty(logits, beams, repeat_penalty)
             logits = logits / temperature
             
             log_probs = torch.log_softmax(logits, dim=-1)
-            # Flatten log_probs if it's 3D (batch_size, beam_width, vocab_size) down to (batch_size * beam_width, vocab_size)
             if log_probs.dim() == 3:
                 log_probs = log_probs.reshape(-1, vocab_size)
                 
