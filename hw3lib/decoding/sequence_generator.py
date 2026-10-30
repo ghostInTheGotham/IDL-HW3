@@ -154,16 +154,16 @@ class SequenceGenerator:
 
         for _ in range(self.max_length - seq_len):
             current_beam_width = beams.size(1)
+            flat_beams = beams.view(-1, beams.size(-1))  # (batch_size * current_beam_width, current_seq_len)
             
-            # Pass unflattened beams (batch_size, current_beam_width, current_seq_len)
-            logits = self.score_fn(beams)  
+            # Pass flattened beams to match test expectations
+            logits = self.score_fn(flat_beams)  # (batch_size * current_beam_width, vocab_size)
             vocab_size = logits.size(-1)
             
-            logits = self._apply_repeat_penalty(logits, beams, repeat_penalty)
+            logits = self._apply_repeat_penalty(logits, flat_beams, repeat_penalty)
             logits = logits / temperature
             
-            # Flatten log_probs specifically for score addition
-            log_probs = torch.log_softmax(logits, dim=-1).view(-1, vocab_size)
+            log_probs = torch.log_softmax(logits, dim=-1)
             flat_scores = beam_scores.view(-1, 1)
             next_scores = log_probs + flat_scores  
             
