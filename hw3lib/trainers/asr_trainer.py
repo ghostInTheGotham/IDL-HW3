@@ -67,7 +67,20 @@ class ASRTrainer(BaseTrainer):
                         logits_tensor = ctc_inputs
                         
                     log_probs = F.log_softmax(logits_tensor, dim=-1).transpose(0, 1)
-                    reduced_feat_lengths = self.model.speech_embedding.get_seq_len(feat_lengths)
+                    
+                    # Safe dynamic check for sequence length reduction
+                    reduced_feat_lengths = feat_lengths
+                    for attr in ['speech_embedding', 'src_embed', 'encoder_embedding', 'encoder']:
+                        sub_mod = getattr(self.model, attr, None)
+                        if sub_mod is not None and hasattr(sub_mod, 'get_seq_len'):
+                            reduced_feat_lengths = sub_mod.get_seq_len(feat_lengths)
+                            break
+                    else:
+                        for module in self.model.modules():
+                            if hasattr(module, 'get_seq_len'):
+                                reduced_feat_lengths = module.get_seq_len(feat_lengths)
+                                break
+
                     ctc_loss = self.ctc_criterion(log_probs, targets_golden, reduced_feat_lengths, transcript_lengths)
                     loss = ce_loss + self.ctc_weight * ctc_loss
                 else:
