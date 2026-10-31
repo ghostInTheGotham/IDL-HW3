@@ -60,7 +60,9 @@ class ASRTrainer(BaseTrainer):
                 ce_loss = self.ce_criterion(seq_out.reshape(-1, seq_out.size(-1)), targets_golden.reshape(-1))
                 
                 if self.ctc_weight > 0:
-                    log_probs = F.log_softmax(ctc_inputs, dim=-1).transpose(0, 1)
+                    # Handle ctc_inputs if returned as a dictionary or tensor
+                    logits_tensor = ctc_inputs['ctc_logits'] if isinstance(ctc_inputs, dict) else ctc_inputs
+                    log_probs = F.log_softmax(logits_tensor, dim=-1).transpose(0, 1)
                     reduced_feat_lengths = self.model.speech_embedding.get_seq_len(feat_lengths)
                     ctc_loss = self.ctc_criterion(log_probs, targets_golden, reduced_feat_lengths, transcript_lengths)
                     loss = ce_loss + self.ctc_weight * ctc_loss
